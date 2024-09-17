@@ -44,7 +44,7 @@ var tasks = map[string]Task{
 // Ниже напишите обработчики для каждого эндпоинта
 
 // Обработчик для получения всех задач:
-func getAllTasks(w http.ResponseWriter, r *http.Request) {
+func getTasks(w http.ResponseWriter, r *http.Request) {
 	resp, err := json.Marshal(tasks)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -53,11 +53,15 @@ func getAllTasks(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
+	_, err = w.Write(resp)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 // Обработчик для отправки задачи на сервер:
-func postTaskTo(w http.ResponseWriter, r *http.Request) {
+func addTask(w http.ResponseWriter, r *http.Request) {
 	var task Task
 	var buf bytes.Buffer
 
@@ -72,44 +76,25 @@ func postTaskTo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks[task.ID] = task
+	if _, newTask := tasks[task.ID]; newTask {
+		http.Error(w, "Задача с таким ID уже существует", http.StatusBadRequest)
+		return
+	} else {
+		tasks[task.ID] = task
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 }
 
 // Обработчик для получения задачи по ID:
-func getTaskId(w http.ResponseWriter, r *http.Request) {
+func getTask(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	task, ok := tasks[id]
 	if !ok {
-		http.Error(w, "Задачи с таким id нет", http.StatusNotFound)
+		http.Error(w, "Задачи с таким id нет", http.StatusBadRequest)
 		return
-	}
-
-	taskName := map[string]string{"Задача": task.Description}
-
-	resp, err := json.Marshal(taskName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
-}
-
-// Обработчик удаления задачи по ID:
-func deleteTaskId(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-
-	task, ok := tasks[id]
-	if !ok {
-		http.Error(w, "Задачи с таким id нет", http.StatusNotFound)
-		return
-	} else {
-		delete(tasks, id)
 	}
 
 	resp, err := json.Marshal(task)
@@ -123,14 +108,26 @@ func deleteTaskId(w http.ResponseWriter, r *http.Request) {
 	w.Write(resp)
 }
 
+// Обработчик удаления задачи по ID:
+func deleteTask(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	_, ok := tasks[id]
+	if !ok {
+		http.Error(w, "Задачи с таким ID нет", http.StatusBadRequest)
+		return
+	}
+	delete(tasks, id)
+	w.WriteHeader(http.StatusOK)
+}
+
 func main() {
 	r := chi.NewRouter()
 
 	// здесь регистрируйте ваши обработчики
-	r.Get("/tasks", getAllTasks)
-	r.Post("/tasks", postTaskTo)
-	r.Get("/tasks/{id}", getTaskId)
-	r.Delete("/tasks/{id}", deleteTaskId)
+	r.Get("/tasks", getTasks)
+	r.Post("/tasks", addTask)
+	r.Get("/tasks/{id}", getTask)
+	r.Delete("/tasks/{id}", deleteTask)
 
 	if err := http.ListenAndServe(":8080", r); err != nil {
 		fmt.Printf("Ошибка при запуске сервера: %s", err.Error())
